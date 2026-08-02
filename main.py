@@ -28,8 +28,15 @@ SOFTWARE_GUIDES = {
     "Telik": "For Telik Peter Gateway: Check cellular SIM card status, APN configuration, and cloud server connection settings in NXperience.",
     "TL400": "For TL400 Ultrasonic Sensor: Ensure 12-24VDC power supply is active before connecting via USB-to-Serial converter to NXperience.",
     "N20K48": "For N20K48 Modular Controller: Connect via USB or Bluetooth using QuickTune. Verify module auto-detection in the main panel.",
-    "N1040": "For N1040 Controller: Connect via USB interface with NXperience. Ensure power supply is connected to allow communication.",
+    "N1040": "For N1040 Controller: Connect via USB interface with QuickTune/NXperience. Ensure power supply is connected to allow communication.",
     "Climate Air": "For Climate Air / RHT Climate: Verify transmitter power supply and 4-20mA / RS485 connection parameters in NXperience."
+}
+
+# Fast Programming Guides
+PROGRAMMING_GUIDES = {
+    "N1040": "To program the N1040: 1) Press the 'P' key for 2 seconds to enter the Configuration Level. 2) Use UP/DOWN arrows to set input type (TYPE), control action (ACT), and tuning mode (ATun). 3) Press 'P' to save each parameter. For quick setup, connect via USB and use QuickTune software.",
+    "N20K48": "To program the N20K48: Connect via Bluetooth or micro-USB using the QuickTune App on your phone/PC. You can configure inputs, control outputs, and optional ClickOn modules intuitively from the main menu.",
+    "FieldLogger": "To program FieldLogger: Use NXperience software on your PC. Create a new configuration file to set up active channels (analog/digital), sampling rate, and alarm thresholds, then download to the device via USB/Ethernet."
 }
 
 # Device Name Normalization Map
@@ -45,7 +52,6 @@ DEVICE_MAP = {
     "climate air": "Climate Air",
     "rht climate": "Climate Air",
     "telik": "Telik",
-    "telik geter": "Telik",
     "tl400": "TL400"
 }
 
@@ -65,7 +71,7 @@ def webhook():
     intent_name = req.get('queryResult', {}).get('intent', {}).get('displayName', '')
     parameters = req.get('queryResult', {}).get('parameters', {})
     
-    # Flexible Parameter Extractions (Supports any case variation)
+    # Flexible Parameter Extraction
     raw_device = (
         parameters.get('Model_eq') or 
         parameters.get('model_eq') or 
@@ -88,7 +94,6 @@ def webhook():
     
     fulfillment_text = "Sorry, I could not process your technical request."
 
-    # Flexible Intent Matching
     intent_lower = intent_name.lower().strip()
 
     # Intent 1: Error Codes
@@ -118,6 +123,15 @@ def webhook():
             fulfillment_text = f"To configure {device_model}, connect it via USB/Bluetooth and open {software_app}. Ensure drivers are updated."
         else:
             fulfillment_text = f"Please specify which Novus device you are trying to configure with {software_app}."
+
+    # Intent 4: Programming / Setup Steps
+    elif "program" in intent_lower or "setup" in intent_lower:
+        if device_model in PROGRAMMING_GUIDES:
+            fulfillment_text = PROGRAMMING_GUIDES[device_model]
+        elif device_model:
+            fulfillment_text = f"To program the {device_model}, hold the configuration key ('P' or 'PROG') for 2 seconds or connect via QuickTune/NXperience software."
+        else:
+            fulfillment_text = "Which Novus device would you like programming instructions for?"
 
     return jsonify({
         "fulfillmentText": fulfillment_text
