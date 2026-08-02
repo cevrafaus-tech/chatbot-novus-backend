@@ -45,7 +45,7 @@ DEVICE_MAP = {
     "climate air": "Climate Air",
     "rht climate": "Climate Air",
     "telik": "Telik",
-    "telik peter": "Telik",
+    "telik geter": "Telik",
     "tl400": "TL400"
 }
 
