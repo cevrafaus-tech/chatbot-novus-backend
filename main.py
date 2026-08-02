@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Novus Product Documentation Links
+# Documentation Links
 NOVUS_MANUALS = {
     "N20K48": "https://www.novusautomation.com/downloads/manual_N20K48_en.pdf",
     "FieldLogger": "https://www.novusautomation.com/downloads/manual_FieldLogger_en.pdf",
@@ -13,7 +13,7 @@ NOVUS_MANUALS = {
     "TL400": "https://www.novusautomation.com/downloads/manual_TL400_en.pdf"
 }
 
-# Technical Error Diagnostics Map
+# Error Diagnostic Map
 ERROR_CODES = {
     "ErR1": "Open or disconnected input sensor. Check wiring continuity at the input terminals.",
     "ErR2": "Value out of range (above upper limit). Verify input type configuration in NXperience or QuickTune.",
@@ -21,25 +21,27 @@ ERROR_CODES = {
     "FAIL": "Internal hardware failure detected. Try power cycling the device or contacting Novus support."
 }
 
+# Root route (to test server life in browser)
 @app.route('/', methods=['GET'])
 def index():
-    return "Novus Automation Bot Backend is Live!"
+    return "Novus Bot Server is Live and Ready!"
 
-@app.route('/webhook', methods=['POST'])
+# Webhook route for Dialogflow
+@app.route('/webhook', methods=['POST', 'GET'])
 def webhook():
+    if request.method == 'GET':
+        return "Webhook endpoint is active! Send a POST request from Dialogflow."
+
     req = request.get_json(force=True)
     
-    # Extract intent name and parameters from Dialogflow request
     intent_name = req.get('queryResult', {}).get('intent', {}).get('displayName', '')
     parameters = req.get('queryResult', {}).get('parameters', {})
     
-    # Standardized parameters in English
     device_model = parameters.get('Model_eq') or 'Novus device'
     error_code = parameters.get('Code_error')
     
     fulfillment_text = "Sorry, I could not process your technical request."
 
-    # Intent: Handle Error Codes
     if intent_name == "Support.Error_Code":
         if error_code in ERROR_CODES:
             error_details = ERROR_CODES[error_code]
@@ -49,7 +51,6 @@ def webhook():
         else:
             fulfillment_text = f"Please provide the error code displayed on your {device_model} screen."
 
-    # Intent: Handle Wiring and Documentation Requests
     elif intent_name == "Support.Wiring":
         if device_model in NOVUS_MANUALS:
             fulfillment_text = f"You can access the official wiring diagram and manual for the {device_model} here: {NOVUS_MANUALS[device_model]}"
