@@ -32,7 +32,7 @@ SOFTWARE_GUIDES = {
     "Climate Air": "For Climate Air / RHT Climate: Verify transmitter power supply and 4-20mA / RS485 connection parameters in NXperience."
 }
 
-# Device Name Normalization Map (Prevents case/synonym mismatches)
+# Device Name Normalization Map
 DEVICE_MAP = {
     "fieldlogger": "FieldLogger",
     "fl": "FieldLogger",
@@ -42,13 +42,10 @@ DEVICE_MAP = {
     "n20k": "N20K48",
     "logbox": "LogBox",
     "logbox ble": "LogBox",
-    "logbox wifi": "LogBox",
     "climate air": "Climate Air",
     "rht climate": "Climate Air",
-    "climate": "Climate Air",
     "telik": "Telik",
     "telik peter": "Telik",
-    "peter": "Telik",
     "tl400": "TL400"
 }
 
@@ -60,28 +57,42 @@ def index():
 
 @app.route('/webhook', methods=['POST', 'GET'])
 def webhook():
-    # Handle direct browser access to the webhook endpoint
     if request.method == 'GET':
         return "Webhook endpoint is active! Send a POST request from Dialogflow."
 
     req = request.get_json(force=True)
     
-    # Extract intent name and parameters from Dialogflow payload
     intent_name = req.get('queryResult', {}).get('intent', {}).get('displayName', '')
     parameters = req.get('queryResult', {}).get('parameters', {})
     
-    # Extract parameter values supporting both English and Spanish names
-    raw_device = parameters.get('Model_eq') or parameters.get('modelo_equipo') or ''
-    error_code = parameters.get('Code_error') or parameters.get('codigo_error')
-    software_app = parameters.get('Software_app') or parameters.get('software_config') or 'NXperience'
+    # Flexible Parameter Extractions (Supports any case variation)
+    raw_device = (
+        parameters.get('Model_eq') or 
+        parameters.get('model_eq') or 
+        parameters.get('modelo_equipo') or ''
+    )
     
-    # Normalize device model name
+    error_code = (
+        parameters.get('Code_error') or 
+        parameters.get('code_error') or 
+        parameters.get('codigo_error')
+    )
+    
+    software_app = (
+        parameters.get('Software_app') or 
+        parameters.get('software_app') or 
+        parameters.get('software_config') or 'NXperience'
+    )
+    
     device_model = DEVICE_MAP.get(str(raw_device).lower(), raw_device)
     
     fulfillment_text = "Sorry, I could not process your technical request."
 
-    # Intent 1: Handle Diagnostic Error Codes
-    if intent_name == "Support.Error_Code":
+    # Flexible Intent Matching
+    intent_lower = intent_name.lower().strip()
+
+    # Intent 1: Error Codes
+    if "error" in intent_lower:
         if error_code in ERROR_CODES:
             error_details = ERROR_CODES[error_code]
             device_str = f"the {device_model}" if device_model else "your Novus device"
@@ -91,15 +102,15 @@ def webhook():
         else:
             fulfillment_text = "Please specify the error code displayed on your device screen (e.g., ErR1, ErR2, FAIL)."
 
-    # Intent 2: Handle Wiring & Manual Requests
-    elif intent_name == "Support.Wiring":
+    # Intent 2: Wiring / Manuals
+    elif "wiring" in intent_lower or "manual" in intent_lower:
         if device_model in NOVUS_MANUALS:
             fulfillment_text = f"You can access the official wiring diagram and manual for the {device_model} here: {NOVUS_MANUALS[device_model]}"
         else:
             fulfillment_text = "Which Novus device model do you need technical documentation for? (e.g., N1040, FieldLogger, N20K48, TL400)"
 
-    # Intent 3: Handle Software & Connectivity Issues
-    elif intent_name == "Support.Software_Config":
+    # Intent 3: Software / Connectivity
+    elif "software" in intent_lower or "config" in intent_lower:
         if device_model in SOFTWARE_GUIDES:
             guide = SOFTWARE_GUIDES[device_model]
             fulfillment_text = f"Troubleshooting {device_model} with {software_app}: {guide}"
