@@ -20,7 +20,6 @@ embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 def home():
   return "Servidor Webhook Novus RAG Activo en Render"
 
-
 @app.route("/webhook", methods=["POST"])
 def dialogflow_webhook():
   req = request.get_json(silent=True, force=True)
