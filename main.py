@@ -11,17 +11,32 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Hugging Face Feature Extraction API (Gratuita para embeddings)
-HF_API_URL = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2"
+# Endpoint alternativo directo de Hugging Face
+HF_API_URL = "https://router.huggingface.co/hf-inference/models/sentence-transformers/all-MiniLM-L6-v2"
 
 
 def get_embedding(text):
-  """Genera el embedding usando la API de HuggingFace sin consumir RAM local."""
-  response = requests.post(HF_API_URL, json={"inputs": text, "options": {"wait_for_model": True}})
+  headers = {"User-Agent": "Mozilla/5.0"}
+  response = requests.post(
+      HF_API_URL,
+      headers=headers,
+      json={"inputs": text, "options": {"wait_for_model": True}},
+      timeout=10,
+  )
   if response.status_code == 200:
     return response.json()
   else:
-    raise Exception(f"Error HuggingFace API: {response.status_code} - {response.text}")
+    # Si falla la API por límite de tasa, intentar endpoint secundario
+    backup_url = "https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2"
+    res_backup = requests.post(
+        backup_url,
+        headers=headers,
+        json={"inputs": text, "options": {"wait_for_model": True}},
+        timeout=10,
+    )
+    if res_backup.status_code == 200:
+      return res_backup.json()
+    raise Exception(f"HF Error Status: {response.status_code} - {response.text}")
 
 
 @app.route("/", methods=["GET"])
@@ -41,14 +56,17 @@ def dialogflow_webhook():
     return jsonify({"fulfillmentText": "No recibí ninguna pregunta válida."})
 
   try:
-    # 1. Generar vector vía API de Hugging Face
+    # 1. Generar vector
     query_vector = get_embedding(pregunta)
 
-    # Si la respuesta es una lista anidada (ej: [[0.1, 0.2...]]), extraemos el primer elemento
-    if isinstance(query_vector, list) and len(query_vector) > 0 and isinstance(query_vector[0], list):
+    if (
+        isinstance(query_vector, list)
+        and len(query_vector) > 0
+        and isinstance(query_vector[0], list)
+    ):
       query_vector = query_vector[0]
 
-    # 2. Buscar en Supabase mediante match_novus_documents
+    # 2. Consultar Supabase
     res = supabase.rpc(
         "match_novus_documents",
         {
@@ -61,10 +79,14 @@ def dialogflow_webhook():
     resultados = res.data
 
     if not resultados:
-      respuesta_texto = "Lo siento, no encontré información relevante en el manual del N1040."
+      respuesta_texto = (
+          "Lo siento, no encontré información relevante en el manual del N1040."
+      )
     else:
       contexto = "\n\n---\n\n".join([item["content"] for item in resultados])
-      respuesta_texto = f"Información técnica del manual N1040 recuperada:\n\n{contexto}"
+      respuesta_texto = (
+          f"Información técnica del manual N1040 recuperada:\n\n{contexto}"
+      )
 
   except Exception as e:
     respuesta_texto = f"Error al procesar la consulta RAG: {str(e)}"
@@ -73,6 +95,5 @@ def dialogflow_webhook():
 
 
 if __name__ == "__main__":
-  # Escuchar en el puerto dinámico asignado por Render
   port = int(os.environ.get("PORT", 10000))
   app.run(host="0.0.0.0", port=port)
