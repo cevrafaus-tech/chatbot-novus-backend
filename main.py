@@ -11,6 +11,7 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+
 # Cargar modelo de embeddings
 print("⏳ Cargando modelo de embeddings...")
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
