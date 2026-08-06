@@ -5,7 +5,7 @@ from supabase import Client, create_client
 
 app = Flask(__name__)
 
-# Credenciales de Supabase (Novus N1040 RAG)
+# Credenciales Supabase RAG
 SUPABASE_URL = "https://cvulaqxjpyemryrccyxb.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2dWxhcXhqcHllbXJ5cmNjeXhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU3NjgyNzcsImV4cCI6MjEwMTM0NDI3N30.bZ6bFoJETc1GAJqh4RTqT2dFcjE9ZaBQgkE8AXZchh4"
 
@@ -33,10 +33,10 @@ def dialogflow_webhook():
     return jsonify({"fulfillmentText": "No recibí ninguna pregunta válida."})
 
   try:
-    # Generar vector para la pregunta
+    # 1. Generar vector
     query_vector = embedding_model.encode(pregunta).tolist()
 
-    # Buscar en Supabase mediante match_novus_documents
+    # 2. Consultar Supabase
     res = supabase.rpc(
         "match_novus_documents",
         {
