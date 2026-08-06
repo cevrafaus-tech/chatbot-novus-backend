@@ -33,10 +33,10 @@ def dialogflow_webhook():
     return jsonify({"fulfillmentText": "No recibí ninguna pregunta válida."})
 
   try:
-    # 1. Generar vector
+    # 1. Generar vector para la pregunta
     query_vector = embedding_model.encode(pregunta).tolist()
 
-    # 2. Consultar Supabase
+    # 2. Consultar Supabase (match_novus_documents)
     res = supabase.rpc(
         "match_novus_documents",
         {
