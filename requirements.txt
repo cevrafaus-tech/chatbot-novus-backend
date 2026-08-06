@@ -1,4 +1,4 @@
 Flask
 gunicorn
 supabase
-sentence-transformers
+requests
