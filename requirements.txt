@@ -1,5 +1,4 @@
-Flask==3.0.3
-gunicorn==22.0.0
-supabase==2.4.3
-sentence-transformers==2.7.0
-torch==2.3.0
+Flask
+gunicorn
+supabase
+sentence-transformers
