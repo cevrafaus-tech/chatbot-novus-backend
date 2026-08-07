@@ -11,7 +11,7 @@ SUPABASE_URL = "https://cvulaqxjpyemryrccyxb.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2dWxhcXhqcHllbXJ5cmNjeXhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU3NjgyNzcsImV4cCI6MjEwMTM0NDI3N30.bZ6bFoJETc1GAJqh4RTqT2dFcjE9ZaBQgkE8AXZchh4"
 
 # Reemplaza esta línea con tu API Key de Google AI Studio:
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "PEGA_AQUI_TU_GEMINI_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AQ.Ab8RN6Je9ljBt4cIxxvyOo1allo6yMuY8chg7wfZMlVRCb6BTA")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 genai.configure(api_key=GEMINI_API_KEY)
