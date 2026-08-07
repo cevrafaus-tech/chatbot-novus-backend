@@ -22,18 +22,18 @@ def limpiar_y_formatear_texto(resultados):
     textos_limpios = []
     for item in resultados:
         txt = item.get("content", "")
-        # Eliminar guiones repetidos y saltos excesivos del PDF
-        txt = re.sub(r"\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.\.", "", txt)
+        # Eliminar guiones repetidos y saltos excesivos
+        txt = re.sub(r"\.{4,}", "", txt)
         txt = re.sub(r"\n+", "\n", txt).strip()
         textos_limpios.append(txt)
 
     contexto = "\n\n• ".join(textos_limpios)
     return (
         "🤖 **Soporte Técnico Novus Automation**\n\n"
-        "Basado en el manual oficial del controlador **N1040**, aquí tienes la información correspondiente a tu consulta:\n\n"
+        "Basado en el manual oficial del controlador **N1040**, aquí tienes la información correspondiente:\n\n"
         f"• {contexto}\n\n"
         "--- \n"
-        "¿Necesitas ayuda con algún otro parámetro de configuración o diagrama de conexión?"
+        "¿Necesitas ayuda con algún otro parámetro o configuración?"
     )
 
 
