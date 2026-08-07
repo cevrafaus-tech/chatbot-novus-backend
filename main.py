@@ -12,21 +12,24 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# 2. Gemini API Key Configuration (Supports AQ... and AIza... keys)
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+# 2. Gemini API Key Configuration
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
-# 3. Initialize Local Embedding Model (fastembed)
+# 3. Initialize Local Embedding Model
 print("⏳ Loading local embedding model...")
 embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 
 def generate_gemini_response(prompt):
-    """Calls the Gemini API passing the API key via the x-goog-api-key header."""
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+    """
+    Sends request to Gemini v1beta using dual key authentication 
+    (query param + x-goog-api-key) to bypass GCP OAuth enforcement.
+    """
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     
     headers = {
         "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY.strip()
+        "x-goog-api-key": GEMINI_API_KEY
     }
     
     payload = {
