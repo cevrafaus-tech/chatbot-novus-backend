@@ -1,8 +1,8 @@
 import os
+import requests
 from flask import Flask, jsonify, request
 from supabase import Client, create_client
 from fastembed import TextEmbedding
-from google import genai
 
 app = Flask(__name__)
 
@@ -13,16 +13,32 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # 2. Configuración Gemini API Key
-
-# Toma la clave de Render automáticamente de forma segura
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-
-# Inicializar cliente oficial de Gemini
-ai_client = genai.Client(api_key=GEMINI_API_KEY)
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 # 3. Inicializar modelo de embeddings local (fastembed)
 print("⏳ Cargando modelo de embeddings local...")
 embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+
+
+def generar_respuesta_gemini(prompt):
+    """Llama directamente a la API REST de Gemini para evitar conflictos de autenticación con el SDK."""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [
+            {
+                "parts": [{"text": prompt}]
+            }
+        ]
+    }
+    
+    response = requests.post(url, headers=headers, json=payload, timeout=15)
+    
+    if response.status_code == 200:
+        data = response.json()
+        return data['candidates'][0]['content']['parts'][0]['text']
+    else:
+        raise Exception(f"API Gemini Error ({response.status_code}): {response.text}")
 
 
 @app.route("/", methods=["GET"])
@@ -80,11 +96,7 @@ def dialogflow_webhook():
             Pregunta del usuario: {pregunta}
             """
 
-            response = ai_client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=system_prompt,
-            )
-            respuesta_texto = response.text.strip()
+            respuesta_texto = generar_respuesta_gemini(system_prompt).strip()
 
     except Exception as e:
         respuesta_texto = f"Error al procesar la consulta: {str(e)}"
