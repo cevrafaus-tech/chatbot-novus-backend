@@ -1,7 +1,7 @@
 import os
-import requests
 from flask import Flask, jsonify, request
 from supabase import Client, create_client
+from fastembed import TextEmbedding
 
 app = Flask(__name__)
 
@@ -11,32 +11,9 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Endpoint alternativo directo de Hugging Face
-HF_API_URL = "https://router.huggingface.co/hf-inference/models/sentence-transformers/all-MiniLM-L6-v2"
-
-
-def get_embedding(text):
-  headers = {"User-Agent": "Mozilla/5.0"}
-  response = requests.post(
-      HF_API_URL,
-      headers=headers,
-      json={"inputs": text, "options": {"wait_for_model": True}},
-      timeout=10,
-  )
-  if response.status_code == 200:
-    return response.json()
-  else:
-    # Si falla la API por límite de tasa, intentar endpoint secundario
-    backup_url = "https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2"
-    res_backup = requests.post(
-        backup_url,
-        headers=headers,
-        json={"inputs": text, "options": {"wait_for_model": True}},
-        timeout=10,
-    )
-    if res_backup.status_code == 200:
-      return res_backup.json()
-    raise Exception(f"HF Error Status: {response.status_code} - {response.text}")
+# Inicializar modelo ligero ONNX local (fastembed)
+print("⏳ Cargando modelo ultraligero ONNX (fastembed)...")
+embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 
 @app.route("/", methods=["GET"])
@@ -56,15 +33,9 @@ def dialogflow_webhook():
     return jsonify({"fulfillmentText": "No recibí ninguna pregunta válida."})
 
   try:
-    # 1. Generar vector
-    query_vector = get_embedding(pregunta)
-
-    if (
-        isinstance(query_vector, list)
-        and len(query_vector) > 0
-        and isinstance(query_vector[0], list)
-    ):
-      query_vector = query_vector[0]
+    # 1. Generar vector localmente sin llamadas HTTP externas
+    embeddings = list(embedding_model.embed([pregunta]))
+    query_vector = embeddings[0].tolist()
 
     # 2. Consultar Supabase
     res = supabase.rpc(
