@@ -2,3 +2,4 @@ Flask
 gunicorn
 supabase
 fastembed
+google-generativeai
