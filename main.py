@@ -12,30 +12,35 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# 2. Gemini API Key Configuration
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+# 2. Anthropic API Key (Fetched from Render Environment Variables)
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 
 # 3. Initialize Local Embedding Model
 print("⏳ Loading local embedding model...")
 embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 
-def generate_gemini_response(prompt):
+def generate_anthropic_response(system_prompt, user_query):
     """
-    Sends request to Gemini v1beta using dual key authentication 
-    (query param + x-goog-api-key) to bypass GCP OAuth enforcement.
+    Calls the Anthropic Messages API using Claude 3.5 Haiku for fast, 
+    accurate, and cost-effective technical synthesis.
     """
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    url = "https://api.anthropic.com/v1/messages"
     
     headers = {
-        "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
     }
     
     payload = {
-        "contents": [
+        "model": "claude-3-5-haiku-20241022",
+        "max_tokens": 1024,
+        "system": system_prompt,
+        "messages": [
             {
-                "parts": [{"text": prompt}]
+                "role": "user",
+                "content": user_query
             }
         ]
     }
@@ -44,14 +49,14 @@ def generate_gemini_response(prompt):
     
     if response.status_code == 200:
         data = response.json()
-        return data['candidates'][0]['content']['parts'][0]['text']
+        return data['content'][0]['text']
     else:
-        raise Exception(f"Gemini API Error ({response.status_code}): {response.text}")
+        raise Exception(f"Anthropic API Error ({response.status_code}): {response.text}")
 
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Novus RAG + Gemini Flash Webhook Server Active on Render"
+    return "Novus RAG + Anthropic Claude Webhook Server Active on Render"
 
 
 @app.route("/webhook", methods=["POST"])
@@ -86,10 +91,10 @@ def dialogflow_webhook():
         else:
             contexto = "\n\n---\n\n".join([item["content"] for item in resultados])
 
-            # B. Generate fluent response with Gemini Flash
+            # B. System Prompt for Claude
             system_prompt = f"""
             You are an expert Technical Support Engineer at Novus Automation.
-            Your task is to answer the user's question using ONLY the following information extracted from the official technical manuals.
+            Your task is to answer the user's question using ONLY the following technical information extracted from the official manuals.
 
             Strict instructions:
             1. Language: Answer in clear, professional English. If the user asks in another language, adapt professionally.
@@ -100,11 +105,9 @@ def dialogflow_webhook():
             --- TECHNICAL MANUAL INFORMATION ---
             {contexto}
             ------------------------------------
-
-            User Question: {pregunta}
             """
 
-            respuesta_texto = generate_gemini_response(system_prompt).strip()
+            respuesta_texto = generate_anthropic_response(system_prompt, pregunta).strip()
 
     except Exception as e:
         respuesta_texto = f"Error processing query: {str(e)}"
