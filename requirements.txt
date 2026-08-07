@@ -2,4 +2,4 @@ Flask
 gunicorn
 supabase
 fastembed
-google-genai
+requests
