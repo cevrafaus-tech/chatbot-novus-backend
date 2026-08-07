@@ -13,7 +13,9 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # 2. Configuración Gemini API Key
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "PEGA_AQUI_TU_GEMINI_API_KEY")
+
+# Toma la clave de Render automáticamente de forma segura
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 # Inicializar cliente oficial de Gemini
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
