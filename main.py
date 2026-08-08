@@ -22,7 +22,7 @@ embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 def generate_anthropic_response(system_prompt, user_query):
     """
-    Calls the Anthropic Messages API using claude-3-haiku-20240307 for fast,
+    Calls the Anthropic Messages API using claude-3-5-sonnet-20241022 for fast,
     reliable, and accurate technical synthesis.
     """
     url = "https://api.anthropic.com/v1/messages"
@@ -34,7 +34,7 @@ def generate_anthropic_response(system_prompt, user_query):
     }
     
     payload = {
-        "model": "claude-3-haiku-20240307",
+        "model": "claude-3-5-sonnet-20241022",
         "max_tokens": 1024,
         "system": system_prompt,
         "messages": [
