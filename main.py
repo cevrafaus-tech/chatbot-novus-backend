@@ -1,5 +1,5 @@
 import os
-import re
+import requests
 from flask import Flask, jsonify, request
 from supabase import Client, create_client
 from fastembed import TextEmbedding
@@ -12,38 +12,52 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# 2. Initialize Local Embedding Model
+# 2. Anthropic API Key (Limpia espacios o saltos de línea invisibles)
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip().strip('"').strip("'")
+
+# 3. Initialize Local Embedding Model
 print("⏳ Loading local embedding model...")
 embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 
-def format_technical_response(results, query):
+def generate_anthropic_synthesis(system_prompt, user_query):
     """
-    Cleans raw PDF text chunks from Supabase and builds a clean, 
-    professional technical answer in English.
+    Sends the manual context to Anthropic (Claude) to synthesize 
+    a professional technical response.
     """
-    clean_chunks = []
-    for item in results:
-        content = item.get("content", "")
-        # Remove PDF dot leaders, page numbers, and excess line breaks
-        content = re.sub(r"\.{4,}", "", content)
-        content = re.sub(r"\n+", "\n", content).strip()
-        clean_chunks.append(content)
-
-    formatted_context = "\n\n• ".join(clean_chunks)
-
-    return (
-        "🤖 **Novus Automation Technical Support**\n\n"
-        "Based on the official **N1040 Controller Manual**, here is the relevant technical information:\n\n"
-        f"• {formatted_context}\n\n"
-        "--- \n"
-        "Do you need further assistance with parameter configurations, wiring diagrams, or error codes?"
-    )
+    url = "https://api.anthropic.com/v1/messages"
+    
+    headers = {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+    }
+    
+    payload = {
+        "model": "claude-3-haiku-20240307",
+        "max_tokens": 1024,
+        "system": system_prompt,
+        "messages": [
+            {
+                "role": "user",
+                "content": user_query
+            }
+        ]
+    }
+    
+    response = requests.post(url, headers=headers, json=payload, timeout=15)
+    
+    if response.status_code == 200:
+        data = response.json()
+        return data['content'][0]['text']
+    else:
+        # Imprime en los logs de Render el detalle exacto de la respuesta
+        raise Exception(f"Anthropic API Error (Status {response.status_code}): {response.text}")
 
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Novus RAG Webhook Server Active on Render"
+    return "Novus RAG + Anthropic Claude Webhook Active on Render"
 
 
 @app.route("/webhook", methods=["POST"])
@@ -67,7 +81,7 @@ def dialogflow_webhook():
             {
                 "query_embedding": query_vector,
                 "match_threshold": 0.2,
-                "match_count": 2
+                "match_count": 3
             }
         ).execute()
 
@@ -79,11 +93,29 @@ def dialogflow_webhook():
                 "regarding that inquiry in the N1040 knowledge base."
             )
         else:
-            # B. Format technical synthesis directly
-            respuesta_texto = format_technical_response(resultados, pregunta)
+            contexto = "\n\n---\n\n".join([item["content"] for item in resultados])
+
+            # B. System Prompt instructing Claude to synthesize the raw text
+            system_prompt = f"""
+            You are an expert Technical Support Engineer at Novus Automation.
+            Your task is to answer the user's question by synthesizing ONLY the following technical information retrieved from the official N1040 manual.
+
+            Strict instructions:
+            1. Language: Answer in clear, professional English.
+            2. Tone: Professional, direct, concise, and helpful.
+            3. Quality: Rephrase raw text into well-formatted Markdown bullet points or tables. Do NOT copy raw page numbers, broken words, or header fragments.
+            4. Precision: Always include exact parameter names, error codes (e.g., nnnn, vvvv, Err1), or values mentioned in the text.
+            5. If the provided context is insufficient to answer the question, politely state that the information is not present in the manual.
+
+            --- OFFICIAL MANUAL CONTEXT ---
+            {contexto}
+            -------------------------------
+            """
+
+            respuesta_texto = generate_anthropic_synthesis(system_prompt, pregunta).strip()
 
     except Exception as e:
-        respuesta_texto = f"Error processing query: {str(e)}"
+        respuesta_texto = f"Error processing query with Claude: {str(e)}"
 
     return jsonify({"fulfillmentText": respuesta_texto})
 
