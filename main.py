@@ -12,7 +12,7 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# 2. Anthropic API Key (Limpia espacios o saltos de línea invisibles)
+# 2. Anthropic API Key (Sanitized)
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip().strip('"').strip("'")
 
 # 3. Initialize Local Embedding Model
@@ -22,8 +22,8 @@ embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 def generate_anthropic_synthesis(system_prompt, user_query):
     """
-    Sends the manual context to Anthropic (Claude) to synthesize 
-    a professional technical response.
+    Sends the manual context to Anthropic (Claude) using the 
+    standard 'claude-3-5-haiku-latest' model alias.
     """
     url = "https://api.anthropic.com/v1/messages"
     
@@ -33,8 +33,9 @@ def generate_anthropic_synthesis(system_prompt, user_query):
         "content-type": "application/json"
     }
     
+    # Primary model attempt: claude-3-5-haiku-latest
     payload = {
-        "model": "claude-3-haiku-20240307",
+        "model": "claude-3-5-haiku-latest",
         "max_tokens": 1024,
         "system": system_prompt,
         "messages": [
@@ -47,17 +48,21 @@ def generate_anthropic_synthesis(system_prompt, user_query):
     
     response = requests.post(url, headers=headers, json=payload, timeout=15)
     
+    # Fallback to claude-3-5-sonnet-latest if 404 occurs on haiku
+    if response.status_code == 404:
+        payload["model"] = "claude-3-5-sonnet-latest"
+        response = requests.post(url, headers=headers, json=payload, timeout=15)
+
     if response.status_code == 200:
         data = response.json()
         return data['content'][0]['text']
     else:
-        # Imprime en los logs de Render el detalle exacto de la respuesta
         raise Exception(f"Anthropic API Error (Status {response.status_code}): {response.text}")
 
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Novus RAG + Anthropic Claude Webhook Active on Render"
+    return "Novus RAG + Anthropic Claude Webhook Active on Render v2"
 
 
 @app.route("/webhook", methods=["POST"])
