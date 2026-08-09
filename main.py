@@ -6,63 +6,53 @@ from fastembed import TextEmbedding
 
 app = Flask(__name__)
 
-# 1. Supabase Credentials
+# 1. Credenciales Supabase
 SUPABASE_URL = "https://cvulaqxjpyemryrccyxb.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2dWxhcXhqcHllbXJ5cmNjeXhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU3NjgyNzcsImV4cCI6MjEwMTM0NDI3N30.bZ6bFoJETc1GAJqh4RTqT2dFcjE9ZaBQgkE8AXZchh4"
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# 2. Anthropic API Key (Sanitized)
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip().strip('"').strip("'")
+# 2. Configuración OpenAI API Key
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 
-# 3. Initialize Local Embedding Model
+# 3. Inicializar Modelo Local de Embeddings
 print("⏳ Loading local embedding model...")
 embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 
-def generate_anthropic_synthesis(system_prompt, user_query):
+def generate_openai_response(system_prompt, user_query):
     """
-    Sends the manual context to Anthropic (Claude) using the 
-    standard 'claude-3-5-haiku-latest' model alias.
+    Llama a la API de OpenAI (GPT-4o-mini) para sintetizar el contexto del manual.
     """
-    url = "https://api.anthropic.com/v1/messages"
+    url = "https://api.openai.com/v1/chat/completions"
     
     headers = {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json"
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
     }
     
-    # Primary model attempt: claude-3-5-haiku-latest
     payload = {
-        "model": "claude-3-5-haiku-latest",
-        "max_tokens": 1024,
-        "system": system_prompt,
+        "model": "gpt-4o-mini",
         "messages": [
-            {
-                "role": "user",
-                "content": user_query
-            }
-        ]
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_query}
+        ],
+        "temperature": 0.2,
+        "max_tokens": 800
     }
     
     response = requests.post(url, headers=headers, json=payload, timeout=15)
     
-    # Fallback to claude-3-5-sonnet-latest if 404 occurs on haiku
-    if response.status_code == 404:
-        payload["model"] = "claude-3-5-sonnet-latest"
-        response = requests.post(url, headers=headers, json=payload, timeout=15)
-
     if response.status_code == 200:
         data = response.json()
-        return data['content'][0]['text']
+        return data['choices'][0]['message']['content']
     else:
-        raise Exception(f"Anthropic API Error (Status {response.status_code}): {response.text}")
+        raise Exception(f"OpenAI API Error ({response.status_code}): {response.text}")
 
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Novus RAG + Anthropic Claude Webhook Active on Render v2"
+    return "Novus RAG + OpenAI GPT-4o-mini Webhook Active on Render"
 
 
 @app.route("/webhook", methods=["POST"])
@@ -77,7 +67,7 @@ def dialogflow_webhook():
         return jsonify({"fulfillmentText": "No valid query was received."})
 
     try:
-        # A. Vector Search in Supabase (Retrieval)
+        # A. Búsqueda vectorial en Supabase
         embeddings = list(embedding_model.embed([pregunta]))
         query_vector = embeddings[0].tolist()
 
@@ -100,10 +90,10 @@ def dialogflow_webhook():
         else:
             contexto = "\n\n---\n\n".join([item["content"] for item in resultados])
 
-            # B. System Prompt instructing Claude to synthesize the raw text
+            # B. System Prompt para GPT-4o-mini
             system_prompt = f"""
             You are an expert Technical Support Engineer at Novus Automation.
-            Your task is to answer the user's question by synthesizing ONLY the following technical information retrieved from the official N1040 manual.
+            Your task is to answer the user's question using ONLY the following technical information retrieved from the official N1040 manual.
 
             Strict instructions:
             1. Language: Answer in clear, professional English.
@@ -117,10 +107,10 @@ def dialogflow_webhook():
             -------------------------------
             """
 
-            respuesta_texto = generate_anthropic_synthesis(system_prompt, pregunta).strip()
+            respuesta_texto = generate_openai_response(system_prompt, pregunta).strip()
 
     except Exception as e:
-        respuesta_texto = f"Error processing query with Claude: {str(e)}"
+        respuesta_texto = f"Error processing query with OpenAI: {str(e)}"
 
     return jsonify({"fulfillmentText": respuesta_texto})
 
