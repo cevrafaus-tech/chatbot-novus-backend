@@ -6,23 +6,23 @@ from fastembed import TextEmbedding
 
 app = Flask(__name__)
 
-# 1. Credenciales Supabase
+# 1. Supabase Credentials
 SUPABASE_URL = "https://cvulaqxjpyemryrccyxb.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2dWxhcXhqcHllbXJ5cmNjeXhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU3NjgyNzcsImV4cCI6MjEwMTM0NDI3N30.bZ6bFoJETc1GAJqh4RTqT2dFcjE9ZaBQgkE8AXZchh4"
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# 2. Configuración OpenAI API Key
+# 2. OpenAI API Key Configuration
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 
-# 3. Inicializar Modelo Local de Embeddings
+# 3. Initialize Local Embedding Model
 print("⏳ Loading local embedding model...")
 embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 
 def generate_openai_response(system_prompt, user_query):
     """
-    Llama a la API de OpenAI (GPT-4o-mini) para sintetizar el contexto del manual.
+    Calls OpenAI GPT-4o-mini to synthesize manual technical context.
     """
     url = "https://api.openai.com/v1/chat/completions"
     
@@ -67,16 +67,17 @@ def dialogflow_webhook():
         return jsonify({"fulfillmentText": "No valid query was received."})
 
     try:
-        # A. Búsqueda vectorial en Supabase
+        # A. Vector Search in Supabase (Retrieval)
         embeddings = list(embedding_model.embed([pregunta]))
         query_vector = embeddings[0].tolist()
 
+        # Lower threshold to 0.05 and increase match count to 5 to capture parameter tables
         res = supabase.rpc(
             "match_novus_documents",
             {
                 "query_embedding": query_vector,
-                "match_threshold": 0.2,
-                "match_count": 3
+                "match_threshold": 0.05,
+                "match_count": 5
             }
         ).execute()
 
@@ -90,17 +91,16 @@ def dialogflow_webhook():
         else:
             contexto = "\n\n---\n\n".join([item["content"] for item in resultados])
 
-            # B. System Prompt para GPT-4o-mini
+            # B. System Prompt for GPT-4o-mini
             system_prompt = f"""
             You are an expert Technical Support Engineer at Novus Automation.
-            Your task is to answer the user's question using ONLY the following technical information retrieved from the official N1040 manual.
+            Your task is to answer the user's question using the provided technical context extracted from the official N1040 manual.
 
             Strict instructions:
             1. Language: Answer in clear, professional English.
             2. Tone: Professional, direct, concise, and helpful.
-            3. Quality: Rephrase raw text into well-formatted Markdown bullet points or tables. Do NOT copy raw page numbers, broken words, or header fragments.
-            4. Precision: Always include exact parameter names, error codes (e.g., nnnn, vvvv, Err1), or values mentioned in the text.
-            5. If the provided context is insufficient to answer the question, politely state that the information is not present in the manual.
+            3. Accuracy: Explain parameter names (such as `inP`), code values, and steps needed to set up the requested configuration (e.g., setting `inP` to `pt` for Pt100 RTD).
+            4. Formatting: Use Markdown bolding and bullet points for parameter navigation and steps.
 
             --- OFFICIAL MANUAL CONTEXT ---
             {contexto}
@@ -110,7 +110,7 @@ def dialogflow_webhook():
             respuesta_texto = generate_openai_response(system_prompt, pregunta).strip()
 
     except Exception as e:
-        respuesta_texto = f"Error processing query with OpenAI: {str(e)}"
+        respuesta_texto = f"Error processing query: {str(e)}"
 
     return jsonify({"fulfillmentText": respuesta_texto})
 
