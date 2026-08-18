@@ -128,13 +128,20 @@ def dialogflow_webhook():
             "match_novus_documents",
             {
                 "query_embedding": query_vector,
-                "match_threshold": 0.05,
-                "match_count": 8
+                "match_threshold": 0.0,
+                "match_count": 10
             }
         ).execute()
 
         resultados = res.data or []
 
+        # =====================================================================
+        # INSTRUCCIÓN DE DEPURACIÓN / LOGS
+        # =====================================================================
+        print(f"--- Retrieved {len(resultados)} chunks for query: '{pregunta}' ---")
+        for idx, r in enumerate(resultados):
+            print(f"[{idx+1}] Device: {r.get('device_name', 'N/A')} | Preview: {r.get('content', '')[:120]}...")
+        
         if not resultados:
             respuesta_texto = (
                 "I'm sorry, I couldn't find any relevant technical information "
