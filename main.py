@@ -20,6 +20,52 @@ print("⏳ Loading local embedding model...")
 embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 
+def expand_user_query(raw_query):
+    """
+    Expande la consulta del usuario con sinónimos técnicos, parámetros y terminología
+    estándar de manuales de Novus antes de generar el embedding para la búsqueda.
+    """
+    if not OPENAI_API_KEY:
+        return raw_query
+
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    expansion_system_prompt = (
+        "You are an industrial automation search optimizer for Novus Automation manuals. "
+        "Expand the following user query by adding relevant technical keywords, parameter names "
+        "(e.g., inP, OUT, ALM, SP, baud rate), standard synonyms (e.g., zero adjustment, 4-20mA calibration, "
+        "wiring terminals), and related device terms. "
+        "Output ONLY a single concise, keyword-rich sentence in English to be used for semantic vector retrieval."
+    )
+
+    payload = {
+        "model": "gpt-4o-mini",
+        "messages": [
+            {"role": "system", "content": expansion_system_prompt},
+            {"role": "user", "content": raw_query}
+        ],
+        "temperature": 0.0,
+        "max_tokens": 100
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            expanded_text = data['choices'][0]['message']['content'].strip()
+            # Combinamos la pregunta original con la versión enriquecida
+            return f"{raw_query} {expanded_text}"
+        else:
+            return raw_query
+    except Exception:
+        # Si la llamada de expansión falla por timeout o red, continuamos con la consulta original
+        return raw_query
+
+
 def generate_openai_response(system_prompt, user_query):
     """
     Calls OpenAI GPT-4o-mini to synthesize retrieved manual context.
@@ -67,11 +113,17 @@ def dialogflow_webhook():
         return jsonify({"fulfillmentText": "No valid query was received."})
 
     try:
-        # A. Vector Search in Supabase (Retrieval)
-        embeddings = list(embedding_model.embed([pregunta]))
+        # =========================================================================
+        # 1. EXPANSIÓN INTELIGENTE DE LA PREGUNTA (Query Expansion)
+        # =========================================================================
+        pregunta_expandida = expand_user_query(pregunta)
+
+        # =========================================================================
+        # 2. BÚSQUEDA SEMÁNTICA VECTORIAL EN SUPABASE (Retrieval)
+        # =========================================================================
+        embeddings = list(embedding_model.embed([pregunta_expandida]))
         query_vector = embeddings[0].tolist()
 
-        # Aumentamos match_count a 8 para capturar tablas completas y contexto circundante
         res = supabase.rpc(
             "match_novus_documents",
             {
@@ -91,7 +143,9 @@ def dialogflow_webhook():
         else:
             contexto = "\n\n---\n\n".join([item["content"] for item in resultados if "content" in item])
 
-            # B. System Prompt completamente genérico y agnóstico
+            # =====================================================================
+            # 3. GENERACIÓN DE LA RESPUESTA FINAL (Synthesis)
+            # =====================================================================
             system_prompt = f"""
             You are an expert Technical Support Engineer at Novus Automation.
             Your task is to answer the user's inquiry accurately based ONLY on the technical context provided below.
@@ -108,6 +162,8 @@ def dialogflow_webhook():
             --------------------------------
             """
 
+            # Observación: A la IA generativa final le pasamos la 'pregunta' original del usuario
+            # para que responda exactamente a lo que este consultó, no a la lista de palabras clave.
             respuesta_texto = generate_openai_response(system_prompt, pregunta).strip()
 
     except Exception as e:
