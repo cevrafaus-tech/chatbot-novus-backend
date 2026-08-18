@@ -11,20 +11,13 @@ SUPABASE_URL = "https://cvulaqxjpyemryrccyxb.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2dWxhcXhqcHllbXJ5cmNjeXhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU3NjgyNzcsImV4cCI6MjEwMTM0NDI3N30.bZ6bFoJETc1GAJqh4RTqT2dFcjE9ZaBQgkE8AXZchh4"
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# 2. OpenAI API Key
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 
-# 3. Initialize Embedding Model
 print("⏳ Loading local embedding model...")
 embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 
 def expand_user_query(raw_query):
-    """
-    Expande la consulta del usuario con sinónimos técnicos, parámetros y terminología
-    estándar de manuales de Novus antes de generar el embedding para la búsqueda.
-    """
     if not OPENAI_API_KEY:
         return raw_query
 
@@ -36,10 +29,9 @@ def expand_user_query(raw_query):
 
     expansion_system_prompt = (
         "You are an industrial automation search optimizer for Novus Automation manuals. "
-        "Expand the following user query by adding relevant technical keywords, parameter names "
-        "(e.g., inP, OUT, ALM, SP, baud rate), standard synonyms (e.g., zero adjustment, 4-20mA calibration, "
-        "wiring terminals), and related device terms. "
-        "Output ONLY a single concise, keyword-rich sentence in English to be used for semantic vector retrieval."
+        "Expand the following query with technical keywords, parameter codes (e.g., inP, OUT, ALM, SP), "
+        "and physical connection terms (terminals, pinout, wiring diagram, wire resistance compensation, RTD). "
+        "Output ONLY a single concise, keyword-rich sentence in English."
     )
 
     payload = {
@@ -57,26 +49,18 @@ def expand_user_query(raw_query):
         if response.status_code == 200:
             data = response.json()
             expanded_text = data['choices'][0]['message']['content'].strip()
-            # Combinamos la pregunta original con la versión enriquecida
             return f"{raw_query} {expanded_text}"
-        else:
-            return raw_query
+        return raw_query
     except Exception:
-        # Si la llamada de expansión falla por timeout o red, continuamos con la consulta original
         return raw_query
 
 
 def generate_openai_response(system_prompt, user_query):
-    """
-    Calls OpenAI GPT-4o-mini to synthesize retrieved manual context.
-    """
     url = "https://api.openai.com/v1/chat/completions"
-    
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json"
     }
-    
     payload = {
         "model": "gpt-4o-mini",
         "messages": [
@@ -86,14 +70,10 @@ def generate_openai_response(system_prompt, user_query):
         "temperature": 0.2,
         "max_tokens": 800
     }
-    
     response = requests.post(url, headers=headers, json=payload, timeout=15)
-    
     if response.status_code == 200:
-        data = response.json()
-        return data['choices'][0]['message']['content']
-    else:
-        raise Exception(f"OpenAI API Error ({response.status_code}): {response.text}")
+        return response.json()['choices'][0]['message']['content']
+    raise Exception(f"OpenAI API Error: {response.text}")
 
 
 @app.route("/", methods=["GET"])
@@ -104,23 +84,14 @@ def home():
 @app.route("/webhook", methods=["POST"])
 def dialogflow_webhook():
     req = request.get_json(silent=True, force=True) or {}
-
-    pregunta = req.get("queryResult", {}).get("queryText", "")
-    if not pregunta:
-        pregunta = req.get("text", "")
+    pregunta = req.get("queryResult", {}).get("queryText", "") or req.get("text", "")
 
     if not pregunta:
         return jsonify({"fulfillmentText": "No valid query was received."})
 
     try:
-        # =========================================================================
-        # 1. EXPANSIÓN INTELIGENTE DE LA PREGUNTA (Query Expansion)
-        # =========================================================================
+        # 1. Expansión y recuperación
         pregunta_expandida = expand_user_query(pregunta)
-
-        # =========================================================================
-        # 2. BÚSQUEDA SEMÁNTICA VECTORIAL EN SUPABASE (Retrieval)
-        # =========================================================================
         embeddings = list(embedding_model.embed([pregunta_expandida]))
         query_vector = embeddings[0].tolist()
 
@@ -135,48 +106,70 @@ def dialogflow_webhook():
 
         resultados = res.data or []
 
-        # =====================================================================
-        # INSTRUCCIÓN DE DEPURACIÓN / LOGS
-        # =====================================================================
-        print(f"--- Retrieved {len(resultados)} chunks for query: '{pregunta}' ---")
-        for idx, r in enumerate(resultados):
-            print(f"[{idx+1}] Device: {r.get('device_name', 'N/A')} | Preview: {r.get('content', '')[:120]}...")
-        
         if not resultados:
-            respuesta_texto = (
-                "I'm sorry, I couldn't find any relevant technical information "
-                "regarding that inquiry in the Novus knowledge base."
-            )
+            return jsonify({"fulfillmentText": "I could not find relevant information in the Novus knowledge base."})
+
+        contexto = "\n\n---\n\n".join([item["content"] for item in resultados if "content" in item])
+
+        # 2. System prompt enriquecido
+        system_prompt = f"""
+        You are an expert Technical Support Engineer at Novus Automation.
+        Your task is to answer the user's inquiry accurately based on the technical context provided below.
+
+        Instructions:
+        1. Language & Tone: Answer in clear, professional, direct English.
+        2. Content: Explain all available wiring recommendations, cable compensation rules, terminal instructions, or parameter setups found in the context.
+        3. Formatting: Use Markdown bolding and bullet points.
+        4. Visual Reference: Mention that a wiring diagram is available below for visual reference if discussing connections.
+
+        --- RETRIEVED MANUAL CONTEXT ---
+        {contexto}
+        --------------------------------
+        """
+
+        respuesta_texto = generate_openai_response(system_prompt, pregunta).strip()
+
+        # 3. Buscar si existe diagrama relevante en product_diagrams
+        diagram_btn = None
+        es_consulta_cableado = any(k in pregunta.lower() for k in ["wire", "wiring", "connect", "terminal", "pt100", "sensor"])
+
+        if es_consulta_cableado:
+            res_diag = supabase.table("product_diagrams")\
+                .select("image_url, button_label")\
+                .eq("diagram_type", "wiring")\
+                .limit(1)\
+                .execute()
+
+            if res_diag.data:
+                img_data = res_diag.data[0]
+                diagram_btn = {
+                    "type": "button",
+                    "icon": {"type": "image", "color": "#FF9800"},
+                    "text": img_data.get("button_label", "🖼️ View Wiring Diagram"),
+                    "link": img_data.get("image_url"),
+                    "event": {"name": ""}
+                }
+
+        # 4. Construir respuesta final para Dialogflow
+        if diagram_btn:
+            response_payload = {
+                "fulfillmentText": respuesta_texto,
+                "fulfillmentMessages": [
+                    {"text": {"text": [respuesta_texto]}},
+                    {
+                        "payload": {
+                            "richContent": [[diagram_btn]]
+                        }
+                    }
+                ]
+            }
         else:
-            contexto = "\n\n---\n\n".join([item["content"] for item in resultados if "content" in item])
+            response_payload = {"fulfillmentText": respuesta_texto}
 
-            # =====================================================================
-            # 3. GENERACIÓN DE LA RESPUESTA FINAL (Synthesis)
-            # =====================================================================
-            system_prompt = f"""
-            You are an expert Technical Support Engineer at Novus Automation.
-            Your task is to answer the user's inquiry accurately using the technical context provided below.
-
-            Strict Instructions:
-            1. Language: Answer in clear, professional English.
-            2. Tone: Helpful, direct, and precise.
-            3. Accuracy: Explain all available connection principles, cable compensation guidelines, terminal assignments, and parameter configurations present in the context.
-            4. Formatting: Use Markdown bolding and bullet points for clarity.
-            5. Synthesis: If partial technical details are present (e.g., wire resistance compensation, wiring rules), provide those details clearly and mention the relevant manual section.
-
-            --- RETRIEVED MANUAL CONTEXT ---
-            {contexto}
-            --------------------------------
-            """
-
-            # Observación: A la IA generativa final le pasamos la 'pregunta' original del usuario
-            # para que responda exactamente a lo que este consultó, no a la lista de palabras clave.
-            respuesta_texto = generate_openai_response(system_prompt, pregunta).strip()
+        return jsonify(response_payload)
 
     except Exception as e:
-        respuesta_texto = f"Error processing query: {str(e)}"
-
-    return jsonify({"fulfillmentText": respuesta_texto})
+        return jsonify({"fulfillmentText": f"Error processing query: {str(e)}"})
 
 
 if __name__ == "__main__":
