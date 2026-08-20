@@ -138,22 +138,37 @@ Your goal is to provide clear, actionable, and rigorously accurate technical gui
         respuesta_texto = generate_openai_response(system_prompt, pregunta).strip()
 
         # 3. Buscar si existe diagrama relevante en product_diagrams
+        # 3. Buscar el diagrama exacto correspondiente al equipo y al tipo de consulta
         diagram_btn = None
-        es_consulta_cableado = any(k in pregunta.lower() for k in ["wire", "wiring", "connect", "terminal", "pt100", "sensor"])
+        
+        # Detectar el tipo de diagrama solicitado
+        diag_type = None
+        if any(k in pregunta.lower() for k in ["wire", "wiring", "connect", "terminal", "pt100", "sensor"]):
+            diag_type = "wiring"
+        elif any(k in pregunta.lower() for k in ["dimension", "cutout", "mount", "size"]):
+            diag_type = "dimensions"
+        elif any(k in pregunta.lower() for k in ["menu", "cycle", "navigation", "program"]):
+            diag_type = "navigation"
 
-        if es_consulta_cableado:
-            res_diag = supabase.table("product_diagrams")\
-                .select("image_url, button_label")\
-                .eq("diagram_type", "wiring")\
-                .limit(1)\
-                .execute()
+        if diag_type:
+            # Detectar el modelo mencionado en la consulta (ej. N1040, N1030, TL400)
+            query_builder = supabase.table("product_diagrams").select("image_url, button_label, product_name").eq("diagram_type", diag_type)
+            
+            # Buscar menciones de modelos comunes
+            modelos = ["N1040", "N1030", "N1050", "N20K48", "TL400", "FieldLogger", "DigiRail"]
+            modelo_detectado = next((m for m in modelos if m.lower() in pregunta.lower()), None)
+            
+            if modelo_detectado:
+                query_builder = query_builder.ilike("product_name", f"%{modelo_detectado}%")
+
+            res_diag = query_builder.limit(1).execute()
 
             if res_diag.data:
                 img_data = res_diag.data[0]
                 diagram_btn = {
                     "type": "button",
                     "icon": {"type": "image", "color": "#FF9800"},
-                    "text": img_data.get("button_label", "🖼️ View Wiring Diagram"),
+                    "text": img_data.get("button_label", "🖼️ View Technical Diagram"),
                     "link": img_data.get("image_url"),
                     "event": {"name": ""}
                 }
