@@ -12,8 +12,10 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 
-print("⏳ Loading local embedding model...")
+print("⏳ Loading and warming up local embedding model...")
 embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+# Calentamiento inicial en memoria para eliminar latencia en la primera consulta
+_ = list(embedding_model.embed(["warmup"]))
 
 
 def generate_openai_response(system_prompt, user_query):
@@ -28,10 +30,10 @@ def generate_openai_response(system_prompt, user_query):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_query}
         ],
-        "temperature": 0.1,
-        "max_tokens": 400  # Mantener generación rápida (< 2 seg)
+        "temperature": 0.0,
+        "max_tokens": 250  # Generación ultrarrápida (< 1.2 segundos)
     }
-    response = requests.post(url, headers=headers, json=payload, timeout=4.5)
+    response = requests.post(url, headers=headers, json=payload, timeout=3.5)
     if response.status_code == 200:
         return response.json()['choices'][0]['message']['content']
     raise Exception(f"OpenAI API Error: {response.text}")
@@ -51,32 +53,31 @@ def dialogflow_webhook():
         return jsonify({"fulfillmentText": "No valid query was received."})
 
     try:
-        # 1. Embedding local directo (rápido, ~200ms)
+        # 1. Embedding inmediato
         embeddings = list(embedding_model.embed([pregunta]))
         query_vector = embeddings[0].tolist()
 
-        # 2. Recuperación rápida en Supabase
+        # 2. Recuperación rápida (top 4 fragmentos)
         res = supabase.rpc(
             "match_novus_documents",
             {
                 "query_embedding": query_vector,
                 "match_threshold": 0.0,
-                "match_count": 6  # 6 fragmentos son óptimos y rápidos
+                "match_count": 4
             }
         ).execute()
 
         resultados = res.data or []
         contexto = "\n\n---\n\n".join([item["content"] for item in resultados if "content" in item]) if resultados else "No specific manual context found."
 
-        # 3. System Prompt directo y conciso
+        # 3. Prompt conciso
         system_prompt = f"""
 You are a Technical Support Engineer at Novus Automation.
-Provide a direct, step-by-step technical answer using the context below.
+Provide a direct, step-by-step technical answer in English using the context below.
 
-Formatting & Rules:
-- Bold parameter codes (e.g., **inP**, **OUT1**) and terminal numbers (e.g., **Terminals 1, 2, and 3**).
-- Use concise bullet points for wiring and configuration steps.
-- Explain 3-wire RTD line resistance compensation if applicable.
+Rules:
+- State exact terminal connections (e.g., **Terminals 1, 2, and 3**) and parameter codes (e.g., **inP**, **OUT1**).
+- Keep the response direct and under 150 words.
 
 --- RETRIEVED CONTEXT ---
 {contexto}
@@ -85,7 +86,7 @@ Formatting & Rules:
 
         respuesta_texto = generate_openai_response(system_prompt, pregunta).strip()
 
-        # 4. Diagrama asociado
+        # 4. Diagrama asociado a la consulta
         diagram_btn = None
         if any(k in pregunta.lower() for k in ["wire", "wiring", "connect", "terminal", "pt100", "sensor"]):
             res_diag = supabase.table("product_diagrams")\
@@ -104,7 +105,7 @@ Formatting & Rules:
                     "event": {"name": ""}
                 }
 
-        # 5. Payload de respuesta
+        # 5. Payload de respuesta compatible con Dialogflow
         if diagram_btn:
             response_payload = {
                 "fulfillmentText": respuesta_texto,
