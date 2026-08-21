@@ -97,25 +97,50 @@ Rules:
 
         respuesta_texto = generate_openai_response(system_prompt, pregunta).strip()
 
-        # 3. Diagrama asociado
+        # 3. Emparejamiento preciso de diagramas
         diagram_btn = None
-        if any(k in pregunta.lower() for k in ["wire", "wiring", "connect", "terminal", "pt100", "sensor"]):
+
+        # Identificar intención de diagrama
+        diag_type = None
+        if any(k in pregunta.lower() for k in ["wire", "wiring", "connect", "connection", "terminal", "pt100", "sensor"]):
+            diag_type = "wiring"
+        elif any(k in pregunta.lower() for k in ["dimension", "cutout", "mount", "size", "panel"]):
+            diag_type = "dimensions"
+        elif any(k in pregunta.lower() for k in ["menu", "cycle", "navigation", "program"]):
+            diag_type = "navigation"
+
+        if diag_type:
+            # Detectar el equipo mencionado
+            modelos = ["N1040", "N1030", "N1050", "N20K48", "TL400", "FieldLogger", "DigiRail"]
+            modelo_detectado = next((m for m in modelos if m.lower() in pregunta.lower()), "N1040")
+
+            # Consulta con doble filtro estricto: Tipo de diagrama + Modelo de equipo
             res_diag = supabase.table("product_diagrams")\
                 .select("image_url, button_label")\
-                .ilike("product_name", f"%{modelo_detectado if modelo_detectado else 'N1040'}%")\
+                .eq("diagram_type", diag_type)\
+                .ilike("product_name", f"%{modelo_detectado}%")\
                 .limit(1)\
                 .execute()
 
+            # Si no encuentra por product_name, busca por coincidencia en image_url
+            if not res_diag.data:
+                res_diag = supabase.table("product_diagrams")\
+                    .select("image_url, button_label")\
+                    .ilike("image_url", f"%{modelo_detectado.lower()}%")\
+                    .ilike("image_url", f"%{diag_type}%")\
+                    .limit(1)\
+                    .execute()
+
             if res_diag.data:
                 img_data = res_diag.data[0]
+                label = img_data.get("button_label") or ("🖼️ View Wiring Diagram" if diag_type == "wiring" else "📐 View Dimensions" if diag_type == "dimensions" else "⚙️ View Menu Navigation")
                 diagram_btn = {
                     "type": "button",
                     "icon": {"type": "image", "color": "#FF9800"},
-                    "text": img_data.get("button_label", "🖼️ View Wiring Diagram"),
+                    "text": label,
                     "link": img_data.get("image_url"),
                     "event": {"name": ""}
                 }
-
         # 4. Respuesta Dialogflow
         if diagram_btn:
             response_payload = {
