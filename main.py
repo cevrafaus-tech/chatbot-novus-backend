@@ -42,9 +42,10 @@ def generate_openai_response(system_prompt, user_query):
             {"role": "user", "content": user_query}
         ],
         "temperature": 0.0,
-        "max_tokens": 200
+        "max_tokens": 120  # Menos tokens = generación en menos de 900 ms
     }
-    response = requests.post(url, headers=headers, json=payload, timeout=2.5)
+    # Aumentar a 3.8s para evitar el error de Read timed out
+    response = requests.post(url, headers=headers, json=payload, timeout=3.8)
     if response.status_code == 200:
         return response.json()['choices'][0]['message']['content']
     raise Exception(f"OpenAI API Error: {response.text}")
