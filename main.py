@@ -101,19 +101,32 @@ Rules:
         # 3. Emparejamiento preciso de diagramas
         diagram_btn = None
 
-        # Identificar intención de diagrama
+        # Detección del tipo de diagrama solicitado
         diag_type = None
-        if any(k in pregunta.lower() for k in ["wire", "wiring", "connect", "connection", "terminal", "pt100", "sensor"]):
+        if any(k in pregunta_lower for k in ["wire", "wiring", "connect", "terminal", "pt100", "sensor"]):
             diag_type = "wiring"
-        elif any(k in pregunta.lower() for k in ["dimension", "cutout", "mount", "size", "panel"]):
+        elif any(k in pregunta_lower for k in ["dimension", "dimensions", "cutout", "mount", "size"]):
             diag_type = "dimensions"
-        elif any(k in pregunta.lower() for k in ["menu", "cycle", "navigation", "program"]):
-            diag_type = "navigation"
 
+        diagram_btn = None
         if diag_type:
-            # Detectar el equipo mencionado
-            modelos = ["N1040", "N1030", "N1050", "N20K48", "TL400", "FieldLogger", "DigiRail"]
-            modelo_detectado = next((m for m in modelos if m.lower() in pregunta.lower()), "N1040")
+            res_diag = supabase.table("product_diagrams")\
+                .select("image_url, button_label")\
+                .eq("diagram_type", diag_type)\
+                .ilike("image_url", f"%{modelo.lower()}%")\
+                .limit(1)\
+                .execute()
+
+            if res_diag.data:
+                img_data = res_diag.data[0]
+                label = img_data.get("button_label") or ("🖼️ View Wiring Diagram" if diag_type == "wiring" else "📐 View Dimensions")
+                diagram_btn = {
+                    "type": "button",
+                    "icon": {"type": "image", "color": "#FF9800"},
+                    "text": label,
+                    "link": img_data.get("image_url"),
+                    "event": {"name": ""}
+                }
 
             # Consulta con doble filtro estricto: Tipo de diagrama + Modelo de equipo
             res_diag = supabase.table("product_diagrams")\
